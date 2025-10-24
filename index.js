@@ -4,18 +4,20 @@ import { Client, GatewayIntentBits, Partials } from 'discord.js';
 
 const {
   DISCORD_TOKEN,
-  PORT = 4000,
   SHARED_TOKEN,
   ACTIVE_TTL = 45,
-  ALLOWED_COMMAND_USER_IDS = ""
+  ALLOWED_COMMAND_USER_IDS = ''
 } = process.env;
 
+// Render injects its own dynamic port at runtime
+const PORT = process.env.PORT || 4000;
+
 if (!DISCORD_TOKEN) {
-  console.error("Missing DISCORD_TOKEN in .env");
+  console.error('Missing DISCORD_TOKEN in Environment tab');
   process.exit(1);
 }
 if (!SHARED_TOKEN) {
-  console.error("Missing SHARED_TOKEN in .env");
+  console.error('Missing SHARED_TOKEN in Environment tab');
   process.exit(1);
 }
 
@@ -38,7 +40,6 @@ function cleanupStale() {
 
 function listOnline() {
   cleanupStale();
-  // Return sorted by name
   return [...active.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([user, info]) => ({ user, lastSeen: info.lastSeen }));
@@ -56,7 +57,9 @@ const app = express();
 app.use(express.json());
 
 // health / uptime
-app.get('/health', (_req, res) => res.json({ ok: true, online: listOnline().length }));
+app.get('/health', (_req, res) =>
+  res.json({ ok: true, online: listOnline().length })
+);
 
 app.post('/status', (req, res) => {
   try {
@@ -79,15 +82,20 @@ app.post('/status', (req, res) => {
 
     // Online or heartbeat
     active.set(userRaw, { lastSeen: Date.now() });
-    return res.json({ ok: true, status: 'online', user: userRaw, ttlSec: Number(ACTIVE_TTL) });
+    return res.json({
+      ok: true,
+      status: 'online',
+      user: userRaw,
+      ttlSec: Number(ACTIVE_TTL)
+    });
   } catch (e) {
     console.error('POST /status error:', e);
     res.status(500).json({ ok: false, error: 'server' });
   }
 });
 
-// Start HTTP
-app.listen(Number(PORT), () => {
+// ✅ FIXED FOR RENDER: use dynamic port variable
+app.listen(PORT, () => {
   console.log(`[HTTP] Listening on :${PORT}`);
 });
 
@@ -104,19 +112,16 @@ const client = new Client({
 });
 
 const allowedIds = new Set(
-  ALLOWED_COMMAND_USER_IDS
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
+  ALLOWED_COMMAND_USER_IDS.split(',').map((s) => s.trim()).filter(Boolean)
 );
 
-client.on('messageCreate', async msg => {
+client.on('messageCreate', async (msg) => {
   try {
     if (msg.author.bot) return;
     if (msg.content.trim().toLowerCase() !== '!status') return;
 
     if (allowedIds.size && !allowedIds.has(msg.author.id)) {
-      return msg.reply("You don't have permission to use this command.");
+      return msg.reply("🚫 You don't have permission to use this command.");
     }
 
     const rows = listOnline();
@@ -124,8 +129,12 @@ client.on('messageCreate', async msg => {
       return msg.reply('⚪ No clients online.');
     }
 
-    const lines = rows.map((r, i) => `${i + 1}. **${r.user}** — last ping ${tsRel(r.lastSeen)}`);
-    const reply = `🟢 **${rows.length}** client(s) online:\n${lines.join('\n')}\n_Entries expire if no heartbeat in ${ACTIVE_TTL}s._`;
+    const lines = rows.map(
+      (r, i) => `${i + 1}. **${r.user}** — last ping ${tsRel(r.lastSeen)}`
+    );
+    const reply = `🟢 **${rows.length}** client(s) online:\n${lines.join(
+      '\n'
+    )}\n_Entries expire if no heartbeat in ${ACTIVE_TTL}s._`;
 
     return msg.reply(reply);
   } catch (e) {
@@ -137,10 +146,10 @@ client.once('ready', () => {
   console.log(`[Discord] Logged in as ${client.user.tag}`);
 });
 
-client.login(DISCORD_TOKEN).catch(err => {
+client.login(DISCORD_TOKEN).catch((err) => {
   console.error('Discord login failed:', err);
   process.exit(1);
 });
 
-// Optional: periodic cleanup in background
+// Optional: periodic cleanup
 setInterval(cleanupStale, 10_000);
